@@ -1,0 +1,19 @@
+# Trace archive — full model I/O logs. Never published: 35 MB and growing every run.
+raw/
+
+# Node
+node_modules/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local secrets and machine-local config
+.env
+.env.*
+!.env.example
+*.local.json
+
+# Transient self-test fixtures
+memory/.selftest-*
