@@ -84,6 +84,25 @@ classified `unknown` rather than `transport`. A misread transport failure is a d
 
 ---
 
+## I-6 · The watchdog classified its own live session as interrupted
+
+**Observed.** During the first watchdog tick, the resume report listed the session that was
+*executing that very tick* as `interrupted` and offered it for resume.
+
+**Root cause.** `sessionOutcome()` had no liveness test. It inferred death from turn shape —
+final call ended `tool-calls`, no natural `stop` — which is true of a live in-progress turn
+exactly as much as of a dead one.
+
+**Fix.** Liveness is now measured directly from the rollout file's mtime: a file still being
+appended to (within 5 minutes) means the agent is mid-turn. `active` overrides every other
+classification. The live session is now reported `ALIVE` and excluded from the resume list.
+
+**Why this mattered more than it looks.** Without it the watchdog would spend every tick trying
+to resume work that was already running — a false signal on the one mechanism whose entire job
+is to notice when work has actually stopped.
+
+---
+
 ## Failure taxonomy
 
 | class | signatures seen | retryable | may stop the system? |

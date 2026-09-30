@@ -13,7 +13,9 @@
 // Rule this file enforces, and which the stop gate must also enforce:
 //   A transport failure is never a reason to stop. It is a reason to retry.
 
-import { readCalls, summarise } from "./trace.mjs";
+import { readCalls, summarise, ROLLOUT_DIR } from "./trace.mjs";
+import { readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * Classify an error into something actionable. The distinction that matters is
@@ -50,13 +52,25 @@ export function classifyError(error) {
 }
 
 /**
+ * A session whose rollout file is still being appended to is ALIVE, not interrupted.
+ *
+ * Found by the watchdog tick itself on 2026-09-30: the session executing the tick — which was
+ * demonstrably mid-work — was classified `interrupted` and offered for resume. Without this,
+ * a session that is running right now is indistinguishable from one that died, and the
+ * watchdog spends every tick trying to resume work that is already running.
+ *
+ * Liveness is measurable and cheap: the rollout file's mtime.
+ */
+export const ALIVE_WINDOW_MS = 5 * 60 * 1000;
+
+/**
  * Decide whether a session actually finished its work.
  *
  * `completed` requires positive evidence: the final call reached `stop` and did not error.
  * Everything else is `interrupted`. This is deliberately asymmetric — proving completion is
  * easy, and assuming it is how work silently disappears.
  */
-export function sessionOutcome(session) {
+export function sessionOutcome(session, opts = {}) {
   const calls = [...(session.calls ?? [])].sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
   if (!calls.length) return { state: "empty", reason: "no calls recorded" };
 
@@ -67,8 +81,18 @@ export function sessionOutcome(session) {
   const transport = allErrors.filter((e) => e.kind === "transport");
   const preempted = allErrors.filter((e) => e.kind === "preempt");
 
+  // Liveness first: it overrides everything below. A file still being written means the
+  // agent is in the middle of this very turn.
+  const now = opts.now ?? Date.now();
+  const mtime = opts.mtime ?? null;
+  const ageMs = mtime ? now - mtime : null;
+  const alive = ageMs !== null && ageMs < ALIVE_WINDOW_MS;
+
   let state, reason;
-  if (err.kind === "user-stop") {
+  if (alive) {
+    state = "active";
+    reason = `rollout file written ${Math.round(ageMs / 1000)}s ago — this session is running right now`;
+  } else if (err.kind === "user-stop") {
     state = "halted-by-user";
     reason = "the last call was stopped deliberately — do not resume without Owen";
   } else if (lastFinish === "stop" && !last.error) {
@@ -97,6 +121,8 @@ export function sessionOutcome(session) {
   return {
     state,
     reason,
+    alive,
+    ageMs,
     sessionId: session.sessionId,
     kind: session.kind,
     lastFinish,
@@ -111,9 +137,25 @@ export function sessionOutcome(session) {
 }
 
 /** Everything the system must pick back up, worst first. */
-export function resumePlan(calls = readCalls()) {
+/** mtime of each session's rollout file, used as the liveness signal. */
+function rolloutMtimes(dir) {
+  const out = {};
+  try {
+    for (const f of readdirSync(dir)) {
+      if (!f.startsWith("model-io-") || !f.endsWith(".jsonl")) continue;
+      const sid = f.slice("model-io-".length, -".jsonl".length);
+      out[sid] = statSync(join(dir, f)).mtimeMs;
+    }
+  } catch {
+    return {}; // an unreadable dir must not silently mark everything dead
+  }
+  return out;
+}
+
+export function resumePlan(calls = readCalls(), opts = {}) {
+  const mtimes = rolloutMtimes(opts.rolloutDir ?? ROLLOUT_DIR);
   const sessions = summarise(calls);
-  const outcomes = sessions.map(sessionOutcome);
+  const outcomes = sessions.map((s) => sessionOutcome(s, { mtime: mtimes[s.sessionId] ?? null, now: opts.now }));
   const resume = outcomes.filter((o) => o.state === "interrupted" || o.state === "unknown");
   const done = outcomes.filter((o) => o.state === "completed");
 
@@ -127,6 +169,7 @@ export function resumePlan(calls = readCalls()) {
   return {
     summary: {
       sessions: sessions.length,
+      active: outcomes.filter((o) => o.state === "active").length,
       completed: done.length,
       interrupted: outcomes.filter((o) => o.state === "interrupted").length,
       haltedByUser: outcomes.filter((o) => o.state === "halted-by-user").length,
@@ -149,7 +192,7 @@ export function render(plan) {
   L.push(`transport failures observed: ${s.transportFailures}`);
   L.push("");
   for (const o of plan.outcomes) {
-    const tag = o.state === "completed" ? "DONE    " : o.state === "interrupted" ? "RESUME  " : o.state === "halted-by-user" ? "BY-YOU  " : "UNKNOWN ";
+    const tag = o.state === "active" ? "ALIVE   " : o.state === "completed" ? "DONE    " : o.state === "interrupted" ? "RESUME  " : o.state === "halted-by-user" ? "BY-YOU  " : "UNKNOWN ";
     L.push(`  [${tag}] ${o.kind.padEnd(9)} ${o.sessionId.slice(0, 34)}`);
     L.push(`            ${o.reason}`);
     if (o.inFlight.length) L.push(`            in flight: ${o.inFlight.join(", ")}`);

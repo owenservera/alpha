@@ -451,6 +451,30 @@ export function selfTest() {
     return "no evidence is not evidence of success";
   });
 
+  // Found by the watchdog tick itself: the session executing the tick was classified
+  // `interrupted` and offered for resume. Liveness must win over shape.
+  check("INVARIANT: a session still being written to is ALIVE, not interrupted", () => {
+    const mid = { sessionId: "live1", kind: "main", callCount: 3, retries: 0,
+      calls: [{ startedAt: "2026-01-01T00:00:00Z", finishReason: "tool-calls", error: null, toolCalls: ["Bash"] }] };
+    const now = Date.now();
+    const alive = sessionOutcome(mid, { mtime: now - 3000, now });
+    assert(alive.state === "active", `recently written session classified ${alive.state}`);
+    assert(alive.alive === true, "alive flag not set");
+
+    const dead = sessionOutcome(mid, { mtime: now - 60 * 60 * 1000, now });
+    assert(dead.state === "interrupted", `stale session classified ${dead.state}`);
+    assert(dead.alive === false, "stale session marked alive");
+    return "liveness overrides turn shape";
+  });
+
+  check("a live session is never offered for resume", () => {
+    const live = plan.outcomes.filter((o) => o.state === "active");
+    for (const l of live) {
+      assert(!plan.resume.some((r) => r.sessionId === l.sessionId), `active session ${l.sessionId} offered for resume`);
+    }
+    return `${live.length} active session(s) excluded from the resume list`;
+  });
+
   check("learning cycle is reproducible in shape", () => {
     const again = cycle();
     assert(again.verdicts.length === c.verdicts.length, "verdict count changed between runs");
