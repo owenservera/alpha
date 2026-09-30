@@ -26,9 +26,11 @@ Verify with `node toolkit/selftest.mjs`. Regenerate evidence with `node alpha.mj
 - **learned:** 2026-09-30
 - **evidence:** the live session grew 34,888 → 126,974 tokens, a 3.64× increase across 94
   calls (`node alpha.mjs`, session `sess_e124448c`).
-- **correction:** an earlier version of this rule said context is "quadratically expensive."
-  That was written before cache accounting existed. With 98% cache hit rate, re-reading
-  context is close to free in tokens; it still costs latency and attention.
+- **correction:** an earlier version said context is "quadratically expensive," written before
+  cache accounting existed. With a 98% cache hit rate the *bill* is far smaller than the raw
+  count suggests — but the tokens are still spent, the tail is still lumpy (5 of 197 calls
+  hold 61% of fresh compute), and any other rate card makes the arithmetic bite. The claim
+  was always true; only my accounting of it was wrong.
 - **check:** `contextGrowth`
 - **means:** Length is not automatically a problem, but it is never free. Finishing a line of
   work and handing off is still better than accumulating, for reasons that have nothing to do
@@ -72,11 +74,15 @@ Verify with `node toolkit/selftest.mjs`. Regenerate evidence with `node alpha.mj
   confirmed it directly: `usage.cacheReadTokens` was present in every record and never read.
   **98% of input tokens are cache re-reads.** The real figure is 207,609 fresh input tokens
   against 109,275 output — about **2:1**, which is unremarkable. The model in use,
-  `new-provider/space-bunny-free`, is free, so the marginal cost of the raw number is $0.00.
+  `new-provider/space-bunny-free`, is free on today's rate card, so the raw number carried
+  $0.00 *then*. Token spend is still a real objective and is optimised at every opportunity —
+  I had wrongly generalised one rate card into 'cost is not the goal', which is the mirror
+  image of the original error.
 - **check:** `none` (a standing discipline)
 - **means:** A measurement is not a fact until you know what it counts. Before reporting a
-  ratio, establish which term is inflated, which is real, and which is free. This rule caught
-  its own author; that is the only evidence it has.
+  ratio, establish which term is inflated and which is real. A true number does not license the
+  conclusion drawn from it — the free-model reading was exactly that mistake. This rule caught
+  its own author twice, in opposite directions; that is the only evidence it has.
 
 ---
 

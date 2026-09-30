@@ -26,8 +26,16 @@ Current numbers are in `brief.md`, regenerated every run. The headline:
 **On 2026-09-30 this system's founding claim was wrong and is retracted.** It asserted a
 "~100 input tokens per output token" pathology. `usage.cacheReadTokens` was present in every
 single record and was never read. The real fresh-work ratio is about 2:1 — unremarkable. The
-model in use, `new-provider/space-bunny-free`, is free, so the raw figure carried $0.00 of
-marginal cost. Two independent reviewers found this; I confirmed it against the raw files.
+model in use, `new-provider/space-bunny-free`, happens to be free today, so the raw figure
+carried $0.00 of marginal cost *on this rate card*. Two independent reviewers found this;
+I confirmed it against the raw files.
+
+**The correction is about the ratio, not the price.** Token spend is a real objective and is
+optimised at every opportunity — the free rate card is a property of today's config, not a
+reason to stop counting. 21 models are configured here, several paid; and the distribution is
+lumpy enough to matter whenever the price does: **5 of 197 calls hold 61% of all fresh compute.**
+What was wrong was reporting an inflated ratio as if it were a cost problem. The cost problem
+is real; the number was not measuring it.
 
 The lesson is R-005, and it is the only rule with real evidence behind it: *a measurement is
 not a fact until you know what it counts.*
@@ -90,9 +98,11 @@ should be allowed to act, or on what.
 
 ## Open questions — these need Owen, not inference
 
-1. **What is the goal variable?** Every rule so far is derived from cost, and the model is
-   free. Cost may be the wrong thing to optimise. Latency, capability, reliability and
-   context length are all plausible and all unmeasured.
+1. **What is the primary goal variable?** Token spend is optimised regardless. Every rule
+   so far is derived from cost, and the model is
+   optimised at every opportunity, not just when a rate card makes it expensive. What is
+   still undeclared is whether *cost* or something else is the primary target; latency,
+   capability and reliability are all plausible and all unmeasured.
 2. **May alpha write to ZCode's configuration, or stay read-only?** Currently read-only. A
    self-improving loop that is measured by a check it cannot pass, and can edit the thing
    doing the measuring, is a loop that will eventually cheat. There is no human in it.

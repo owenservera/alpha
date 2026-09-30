@@ -155,8 +155,11 @@ This is the difference between measuring the room and measuring the behaviour.
   fails closed — *not* in a markdown file this parser demonstrably drops rules from.
 - **A growth ledger as a success metric.** Entries in `learnings.jsonl` went up while the
   verdict stayed pinned. Activity is not progress.
-- **Anything that optimises token cost.** The model is free. Cost is not the objective; it was
-  the only variable I could measure, which is not the same thing.
+- **~~Anything that optimises token cost.~~ RETRACTED 2026-09-30.** I had this filed under
+  'worth killing' on the reasoning that the model was free. That was me generalising one rate
+  card into a principle. Owen corrected it: token spend is to be optimised at every chance we
+  get. Keeping token optimisation is correct; the error was in what I was measuring, not in
+  the value of measuring it.
 
 ---
 
@@ -165,9 +168,11 @@ This is the difference between measuring the room and measuring the behaviour.
 These are not rhetorical. Each one changes what should be built, and none can be inferred from
 a trace file:
 
-1. **What is the goal variable?** Cost is free. Latency, capability, reliability and context
-   length are all plausible and all unmeasured. Alpha currently optimises nothing because it
-   cannot choose.
+1. **What is the primary goal variable?** Token spend is optimised at every opportunity
+   regardless, so that is settled. Still undeclared: whether *cost* is the primary target or a
+   co-equal one alongside latency, capability, reliability and context length — the last of
+   which is plausible and entirely unmeasured. What alpha optimises *first*, when they conflict,
+   is the open part.
 2. **May alpha write to ZCode's configuration, or stay read-only?** Currently read-only. A
    self-modifying loop measured by a check it cannot pass, with no human in it, will eventually
    change whatever is doing the measuring. The anti-loophole answer is an external witness
@@ -179,7 +184,7 @@ a trace file:
 ## The honest counter-argument
 
 Everything above rests on one premise: that a complete record of agent behaviour is worth
-analysing. That may be false. If the model is free, the cache absorbs 98% of context, and
+analysing. That may be false. If the cache absorbs 98% of context, the current rate card is
 nothing here changes Owen's decisions tomorrow, then alpha is an elaborate mirror pointed at
 its own furniture, and the right move is to keep `trace.mjs` and delete the rest.
 
