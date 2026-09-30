@@ -8,6 +8,7 @@ import { readCalls, summarise, observe, toolWeight, ROLLOUT_DIR, approxTokens } 
 import { analyse, analyseSession } from "./analyze.mjs";
 import { loadRules, CHECKS, cycle } from "./learn.mjs";
 import { resumePlan, classifyError, sessionOutcome } from "./resume.mjs";
+import { attributeAll, attributeTurns, cacheCollapses } from "./attribution.mjs";
 import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -346,6 +347,44 @@ export function selfTest() {
       calls: [{ startedAt: "2026-01-01T00:00:00Z", finishReason: null,
                 error: { name: "Error", message: "v4 session stopped" }, toolCalls: [] }] };
     assert(sessionOutcome(halted).state === "halted-by-user", "user stop not classified");
+  });
+
+  // --------------------------------------------------------- attribution ----
+  const attr = attributeAll();
+
+  check("attributed fresh input reconciles with the trace total", () => {
+    const fromTrace = calls.filter((c) => c.billedInput != null).reduce((a, c) => a + c.billedInput, 0);
+    assert(attr.totals.freshInput === fromTrace,
+      `attribution sums to ${attr.totals.freshInput} but the trace says ${fromTrace}`);
+    return `${fromTrace.toLocaleString()} fresh tokens reconcile across ${attr.totals.turns} turns`;
+  });
+
+  // The first draft of attribution used marginal deltas. They go NEGATIVE when the cache
+  // absorbs more of one call than the last — observed -35,555. Lock the correction down.
+  check("REGRESSION: per-turn fresh input is never negative (no delta arithmetic)", () => {
+    for (const s of attr.sessions) {
+      for (const t of s.turns) {
+        assert(t.freshInput >= 0, `${t.turnId}: negative fresh input ${t.freshInput}`);
+        assert(t.freshInput === t.rawInput - t.cacheRead, `${t.turnId}: fresh != raw - cache`);
+      }
+    }
+    return "every turn is a sum, never a delta";
+  });
+
+  check("turn grouping accounts for every agent turn", () => {
+    const grouped = attr.sessions.reduce((a, s) => a + s.turns.length, 0);
+    assert(grouped === attr.totals.turns, "turn count mismatch");
+    assert(attr.totals.turns > 0, "no turns attributed");
+  });
+
+  check("cache collapse is detected and is a small, expensive tail", () => {
+    const cc = cacheCollapses();
+    for (const c of cc.collapses) {
+      assert(c.hitShare < 25, `${c.at}: hit share ${c.hitShare} is not a collapse`);
+      assert(c.fresh > 0, "collapse with no fresh cost");
+    }
+    assert(cc.collapseShare >= 0 && cc.collapseShare <= 100, `${cc.collapseShare}% out of range`);
+    return `${cc.collapseRate}% of calls hold ${cc.collapseShare}% of fresh compute`;
   });
 
   check("learning cycle is reproducible in shape", () => {

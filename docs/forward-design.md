@@ -39,13 +39,46 @@ has a defensible reason to exist at all — not the rules engine, but the reader
 207,609 fresh input tokens" is true and useless. *"The `Bash` call that dumped a 266 KB file
 into context cost 40k tokens and produced nothing"* is actionable.
 
-**The design.** Each model call has a `turnId`. Consecutive calls share a turn. A turn's
-marginal cost is `inputTokens[i] − inputTokens[i−1]` — the context it *added*. Attribute that
-delta to the tool call that caused it, and the trace becomes a ledger of decisions with prices.
+**The design.** Each model call has a `turnId`; consecutive calls share a turn. A turn's cost
+is the **sum of each call's own fresh input** — `input − cacheRead` — across its calls.
 
 ```js
-// marginal cost of the i-th call, i.e. what the previous turn's output cost to re-send
-const marginal = (calls, i) => (calls[i].inputTokens ?? 0) - (calls[i - 1]?.inputTokens ?? 0);
+const fresh = (c) => (c.inputTokens ?? 0) - (c.cacheReadTokens ?? 0);   // never negative
+const turnCost = (calls) => calls.reduce((a, c) => a + fresh(c), 0);
+```
+
+**A correction, applied before this shipped.** The first draft used *marginal* cost:
+`input[i] − input[i−1]`. Measured against the live trace, that formula is wrong — it yields
+**negative deltas** (observed: −35,555) whenever the cache absorbs more of one call than the
+last, which is the common case on a 98%-hit workload. Cache eviction makes input lumpy and the
+delta meaningless. Summing fresh input is monotonic, non-negative, and is exactly the work the
+machine did. `toolkit/selftest.mjs` now asserts no turn can go negative.
+
+### 1a · What per-turn attribution immediately found — the cache collapse
+
+Session ratios said 2:1. Per-turn attribution said otherwise, and found this:
+
+> **5 of 197 calls — 2.5% — account for 61% of every fresh token computed on this machine.**
+
+| calls | cache hit | avg fresh tokens/call |
+|---|---|---|
+| 183 (93%) | 95–100% | **803** |
+| 9 (5%) | 75–95% | 4,354 |
+| **5 (2.5%)** | **0–25%** | **58,420** |
+
+The worst single turn cost **175,144 fresh tokens** at a 0.07% cache hit rate, on a single Bash
+call. When the cache collapses, the entire context is recomputed from scratch.
+
+This is invisible at session level by construction: one 180:1 turn inside a session that
+averages 2:1. It is also **not** a bad decision — it is provider-side cache eviction on a large
+context, and an agent that "learned" to avoid those calls would be learning noise.
+
+The actionable consequence is narrower and real: **the tail, not the average, is where compute
+goes.** Any cost model that reasons about means will be wrong about this workload by two orders
+of magnitude.
+
+```js
+if (cacheRead / inputTokens < 0.25) flagCollapse();   // don't average this call
 ```
 
 **Why it is falsifiable.** A turn with a marginal cost above a threshold and zero downstream
