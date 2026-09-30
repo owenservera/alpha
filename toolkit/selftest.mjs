@@ -296,6 +296,10 @@ export function selfTest() {
       [{ name: "AiSdkModelAdapterError", message: "Model request was cancelled." }, "cancel"],
       [{ name: "Error", message: "v4 sendQueuedNow preempts active turn" }, "preempt"],
       [{ name: "Error", message: "v4 session stopped" }, "user-stop"],
+      // observed live 2026-09-30: DNS failure arriving under a generic error name
+      [{ name: "Error", message: "Provider returned a server error. Upstream error: getaddrinfo ENOTFOUND opencode.ai" }, "transport"],
+      [{ name: "Error", message: "request failed, status 503" }, "transport"],
+      [{ name: "Error", message: "fetch failed" }, "transport"],
     ];
     for (const [err, want] of cases) {
       const got = classifyError(err);

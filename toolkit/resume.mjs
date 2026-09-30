@@ -24,7 +24,15 @@ export function classifyError(error) {
   const name = String(error.name ?? "");
   const message = String(error.message ?? "").toLowerCase();
 
-  if (name === "TerminalStreamChunkError" || name === "AI_APICallError" || /server error|network|econn|socket|timeout|dns|fetch failed/.test(message)) {
+  if (
+    name === "TerminalStreamChunkError" ||
+    name === "AI_APICallError" ||
+    // Observed live 2026-09-30: "Provider returned a server error ... Upstream error:
+    // getaddrinfo ENOTFOUND opencode.ai", status 502, retryable=true. DNS and 5xx arrive
+    // under several different error names depending on which layer fails first, so match the
+    // message too — a transport failure misread as unknown is a dropped retry.
+    /server error|network|econn|eaddrnotavail|enotfound|getaddrinfo|socket|timeout|dns|fetch failed|eai_again|upstream error|\b50[0234]\b/.test(message)
+  ) {
     return { kind: "transport", retryable: true, deliberate: false, name, message: error.message };
   }
   if (name === "AiSdkModelAdapterError" || /cancelled|canceled|aborted/.test(message)) {
