@@ -69,6 +69,30 @@ should be allowed to act, or on what.
 3. **What should a unit of attribution be?** All findings are session-level aggregates
    (R-008). To make a per-decision claim, cost must be attributed to the turn that caused it.
 
+## Git policy — Owen's explicit rule
+
+Set by Owen on 2026-09-30. Remote is `https://github.com/owenservera/alpha`, **public**.
+
+**Standing authorisation.** Committing and pushing to `main` is pre-authorised, and only for
+the purpose of keeping GitHub current. Push at the end of any session that produced real work.
+
+**Requires Owen's explicit approval before doing any of these:**
+
+- rewriting published history — `rebase`, `reset --hard`, `commit --amend` on a pushed commit,
+  `filter-branch`, or any history rewrite
+- force-pushing (`--force`, `--force-with-lease`) under any circumstance
+- deleting or renaming a branch or tag that exists on the remote
+- changing repository settings: visibility, description, topics, default branch
+- adding collaborators, or changing anything about who can see or write to this repo
+- `git clean`, `git checkout .`, or discarding any uncommitted local work
+
+**Also out of bounds without asking:** anything that widens what is published. The repo is
+public and permanent. A force-push or a visibility flip is not recoverable by deleting it
+later, so treat both as destructive.
+
+Note that `raw/` (full model I/O logs, 35 MB, grows every run) is gitignored and must stay
+that way unless Owen says otherwise.
+
 ## Constraints
 
 - **Do not modify ZCode's install** (`C:\Program Files\ZCode`). Analyse its traces; build
