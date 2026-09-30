@@ -94,6 +94,10 @@ export function readCalls(rolloutDir = ROLLOUT_DIR) {
         startedAt: d.startedAt ?? null,
         durationMs: d.durationMs ?? 0,
         attempt: d.attempt ?? 1,
+        // finishReason is the only signal that separates "the agent finished" from "the turn
+        // died mid-work". 166 of 173 calls on this machine ended `tool-calls`; only 6 reached
+        // `stop`. Without this field the two are indistinguishable and work vanishes silently.
+        finishReason: d.response?.finishReason ?? null,
         model: d.model ? `${d.model.providerId}/${d.model.modelId}` : "unknown",
         turnId: d.turnId ?? null,
         error: d.error ? { name: d.error.name, message: d.error.message } : null,

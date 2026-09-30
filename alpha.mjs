@@ -13,6 +13,7 @@ import { analyse, render as renderAnalysis } from "./toolkit/analyze.mjs";
 import { cycle, render as renderVerdict } from "./toolkit/learn.mjs";
 import { selfTest } from "./toolkit/selftest.mjs";
 import { archiveRollouts, ROLLOUT_DIR } from "./toolkit/trace.mjs";
+import { resumePlan, render as renderResume } from "./toolkit/resume.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const BRIEF = join(ROOT, "brief.md");
@@ -74,6 +75,14 @@ if (argv.includes("--test")) {
   process.exit(ok ? 0 : 1);
 }
 
+if (argv.includes("--resume")) {
+  // The always-on entry point. Run this first after any interruption: it says what died,
+  // why, and what was in flight. It never halts — an interrupted session is work to do.
+  const plan = resumePlan();
+  console.log(process.argv.includes("--json") ? JSON.stringify(plan, null, 2) : renderResume(plan));
+  process.exit(0);
+}
+
 // Snapshot first: ZCode deletes a sub-agent's rollout file when the session ends, and any
 // rule citing that session loses its evidence within minutes.
 const arch = archiveRollouts(RAW, ROLLOUT_DIR);
@@ -93,5 +102,10 @@ if (argv.includes("--json")) {
   console.log(renderAnalysis(a));
   console.log("\n" + "=".repeat(72) + "\n");
   console.log(renderVerdict(c));
+  // Always-on: every run reports what was left unfinished, so a session that resumed after
+  // a network drop cannot mistake an interrupted turn for a completed one.
+  const rp = resumePlan();
+  console.log("\n" + "=".repeat(72) + "\n");
+  console.log(renderResume(rp));
   console.log(`\nbrief.md ${argv.includes("--no-write") ? "(not written)" : "regenerated"} | learnings.jsonl ${argv.includes("--no-write") ? "(not appended)" : "appended"}`);
 }

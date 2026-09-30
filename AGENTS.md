@@ -32,10 +32,38 @@ marginal cost. Two independent reviewers found this; I confirmed it against the 
 The lesson is R-005, and it is the only rule with real evidence behind it: *a measurement is
 not a fact until you know what it counts.*
 
+## Operating model — always on
+
+Set by Owen on 2026-09-30. **Do not stop voluntarily.** Keep working until Owen says stop, or
+a stop condition genuinely evaluates true against measured state.
+
+### A transport failure is never a stop
+
+This is the rule that was learned the hard way. Owen's network dropped mid-session, he
+reconnected, and the work did not resume — because ZCode leaves no record distinguishing a
+turn that finished from a turn that died on a socket.
+
+Measured across 173 calls: **166 ended `finishReason: "tool-calls"` (mid-work); only 6 reached
+a natural `stop`.** A call that dies on `TerminalStreamChunkError` or `AI_APICallError` is
+shaped exactly like one that finished.
+
+So: `node alpha.mjs --resume` runs at the top of every session and on every normal run. It
+classifies each session as `completed` / `interrupted` / `halted-by-user` / `unknown` and lists
+what was in flight. **Completion must be proven — a natural `stop` — never assumed.**
+
+- `interrupted` → resume it. Check what was in flight, re-read state, continue.
+- `halted-by-user` → do nothing until Owen speaks. This is the only stop this system honours.
+- Transport errors (`transport`, `cancel`, `preempt`) are **retryable and never deliberate.**
+  They may never satisfy a stop condition. This is enforced by tests in `toolkit/selftest.mjs`.
+
+ZCode does not restart a dead session by itself. The watchdog tick in the Automations panel
+re-enters the work; the resume report tells it what to re-enter.
+
 ## First action, every session
 
 ```
-node alpha.mjs          # measure, verdict, regenerate brief.md
+node alpha.mjs --resume   # what died, what was in flight — run this FIRST
+node alpha.mjs           # measure, verdict, regenerate brief.md
 node toolkit/selftest.mjs   # 31 assertions against the live trace
 ```
 

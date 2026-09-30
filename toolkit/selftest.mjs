@@ -7,6 +7,7 @@
 import { readCalls, summarise, observe, toolWeight, ROLLOUT_DIR, approxTokens } from "./trace.mjs";
 import { analyse, analyseSession } from "./analyze.mjs";
 import { loadRules, CHECKS, cycle } from "./learn.mjs";
+import { resumePlan, classifyError, sessionOutcome } from "./resume.mjs";
 import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -283,6 +284,64 @@ export function selfTest() {
     assert(CHECKS.noOutput(dead).fired === true, "a zero-output session did not fire noOutput");
     assert(CHECKS.lowYield(dead).fired === false, "lowYield should defer to noOutput for a zero-output session");
     return "zero-output sessions are caught";
+  });
+
+  // --------------------------------------------------------------- resume ----
+  const plan = resumePlan();
+
+  check("errors are classified by cause, not just counted", () => {
+    const cases = [
+      [{ name: "TerminalStreamChunkError", message: "Provider returned a server error." }, "transport"],
+      [{ name: "AI_APICallError", message: "" }, "transport"],
+      [{ name: "AiSdkModelAdapterError", message: "Model request was cancelled." }, "cancel"],
+      [{ name: "Error", message: "v4 sendQueuedNow preempts active turn" }, "preempt"],
+      [{ name: "Error", message: "v4 session stopped" }, "user-stop"],
+    ];
+    for (const [err, want] of cases) {
+      const got = classifyError(err);
+      assert(got.kind === want, `${err.name}/${err.message}: got ${got.kind}, want ${want}`);
+    }
+    return `${cases.length} error signatures classified`;
+  });
+
+  // THE always-on invariant: a network drop must never read as a deliberate stop.
+  check("INVARIANT: transport failures are retryable and never deliberate", () => {
+    for (const e of [classifyError({ name: "TerminalStreamChunkError", message: "server error" }),
+                     classifyError({ name: "AI_APICallError", message: "network timeout" }),
+                     classifyError({ name: "AiSdkModelAdapterError", message: "cancelled" })]) {
+      assert(e.retryable === true, `${e.kind} should be retryable`);
+      assert(e.deliberate === false, `${e.kind} must not be deliberate`);
+    }
+  });
+
+  check("INVARIANT: only a deliberate stop produces a stop signal", () => {
+    assert(plan.stopSignal === plan.outcomes.some((o) => o.state === "halted-by-user"),
+      "stopSignal disagrees with the halted-by-user outcomes");
+    assert(plan.summary.transportFailures >= 0, "transport count missing");
+    return `transport=${plan.summary.transportFailures} stopSignal=${plan.stopSignal}`;
+  });
+
+  check("completion must be proven, never assumed", () => {
+    const mid = { sessionId: "s1", kind: "main", callCount: 3, retries: 0,
+      calls: [{ startedAt: "2026-01-01T00:00:00Z", finishReason: "tool-calls", error: null, toolCalls: ["Bash"] }] };
+    assert(sessionOutcome(mid).state === "interrupted", "mid-work session reported as finished");
+    const done = { sessionId: "s2", kind: "main", callCount: 3, retries: 0,
+      calls: [{ startedAt: "2026-01-01T00:00:00Z", finishReason: "stop", error: null, toolCalls: [] }] };
+    assert(sessionOutcome(done).state === "completed", "naturally stopped session not completed");
+    const dropped = { sessionId: "s3", kind: "main", callCount: 3, retries: 1,
+      calls: [{ startedAt: "2026-01-01T00:00:00Z", finishReason: null,
+                error: { name: "TerminalStreamChunkError", message: "server error" }, toolCalls: ["Read"] }] };
+    const o = sessionOutcome(dropped);
+    assert(o.state === "interrupted", "network-dropped session not flagged interrupted");
+    assert(o.transportFailures === 1, "transport failure not counted");
+    return "mid-work, clean-stop and network-drop all classified correctly";
+  });
+
+  check("a deliberate stop is never auto-resumed", () => {
+    const halted = { sessionId: "s4", kind: "main", callCount: 2, retries: 0,
+      calls: [{ startedAt: "2026-01-01T00:00:00Z", finishReason: null,
+                error: { name: "Error", message: "v4 session stopped" }, toolCalls: [] }] };
+    assert(sessionOutcome(halted).state === "halted-by-user", "user stop not classified");
   });
 
   check("learning cycle is reproducible in shape", () => {
