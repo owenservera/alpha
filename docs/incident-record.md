@@ -102,14 +102,19 @@ network, and none of them is a decision by anyone. Only a deliberate stop ends t
 
 Recorded so it is not rediscovered as a surprise:
 
-1. **The rules-file parser silently drops a rule** if one `###` heading is edited. The guard only
-   catches *total* zero. A single-rule loss is undetectable today. This is the highest-risk
-   latent defect and it directly affects the gate, which is why stop conditions must not live
-   in `rules.md`.
+1. ~~**The rules-file parser silently drops a rule.**~~ **FIXED 2026-09-30.** A witnessed
+   manifest (`memory/rules.manifest.json`) records every rule id and content hash. A rule that
+   has vanished since the last witnessed run now forces `VERDICT: BROKEN`. Verified by demoting
+   one heading: 9 rules -> 8 parsed, `missing: [R-003]`, verdict `BROKEN`. Before the fix this
+   case reported `ALIGNED`. Locked by a regression test.
 2. **The headline still reports one universal tool-schema floor** (18,735 tokens) when
    sub-agents carry a smaller set (11,611). Per-session figures are correct.
 3. **The archive is write-only.** `raw/` is preserved but never read back, so the tool's numbers
    and its own evidence store drift apart.
 4. **Two self-tests cannot fail by construction** (they assert an inline expression rather than
    calling the code under test).
-5. **No per-turn attribution.** Every finding is a session aggregate.
+5. ~~**No per-turn attribution.**~~ **BUILT 2026-09-30** — `toolkit/attribution.mjs`. It found
+   that 5 of 197 calls hold 61% of all fresh compute, which session ratios cannot see.
+
+The cache-collapse finding that motivated item 5 turned out **not** to be actionable: collapse
+does not correlate with context size (see R-009). It is filed as a caveat, not a rule.

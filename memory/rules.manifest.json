@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-30T11:03:34.961Z",
+  "count": 9,
+  "rules": [
+    {
+      "id": "R-001",
+      "check": "deadSchema",
+      "hash": "28091680ff41"
+    },
+    {
+      "id": "R-002",
+      "check": "contextGrowth",
+      "hash": "9bb0378a0d33"
+    },
+    {
+      "id": "R-003",
+      "check": "lowYield",
+      "hash": "a7d9dc472579"
+    },
+    {
+      "id": "R-004",
+      "check": "retryCost",
+      "hash": "c25e4744c7ac"
+    },
+    {
+      "id": "R-005",
+      "check": "none",
+      "hash": "32a13fd222f0"
+    },
+    {
+      "id": "R-006",
+      "check": "none",
+      "hash": "be603f9f31fe"
+    },
+    {
+      "id": "R-007",
+      "check": "none",
+      "hash": "22104dc7e252"
+    },
+    {
+      "id": "R-009",
+      "check": "none",
+      "hash": "a031f9503120"
+    },
+    {
+      "id": "R-008",
+      "check": "none",
+      "hash": "a718843c4626"
+    }
+  ]
+}

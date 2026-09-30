@@ -12,7 +12,8 @@
 //       node toolkit/learn.mjs --json     machine-readable
 //       node toolkit/learn.mjs --quiet    append the cycle, print nothing
 
-import { readFileSync, appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { analyse } from "./analyze.mjs";
@@ -20,6 +21,9 @@ import { analyse } from "./analyze.mjs";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const RULES = join(ROOT, "rules.md");
 const LEDGER = join(ROOT, "memory", "learnings.jsonl");
+const MANIFEST = join(ROOT, "memory", "rules.manifest.json");
+
+const sha = (s) => createHash("sha256").update(s ?? "").digest("hex").slice(0, 12);
 
 // ---------------------------------------------------------------- rules ----
 
@@ -47,6 +51,42 @@ export function loadRules(path = RULES) {
     rules.push({ id, title, check, learned, retired, caveat, evidence, means });
   }
   return rules;
+}
+
+// -------------------------------------------------------------- manifest ----
+//
+// The parser drops any rule whose heading is not exactly `### R-NNN`. An adversarial review
+// demonstrated that demoting ONE heading silently deletes ONE rule and the system still
+// reports ALIGNED — a guard that only catches total-zero cannot see a partial loss.
+//
+// The manifest records what was last witnessed. A rule that has disappeared since the last
+// witnessed run is a failure, not a quiet simplification.
+
+export function witnessRules(rules, path = MANIFEST) {
+  const manifest = {
+    at: new Date().toISOString(),
+    count: rules.length,
+    rules: rules.map((r) => ({ id: r.id, check: r.check, hash: sha(`${r.id}|${r.check}|${r.evidence}`) })),
+  };
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(manifest, null, 2), "utf8");
+  return manifest;
+}
+
+export function diffAgainstWitness(rules, path = MANIFEST) {
+  if (!existsSync(path)) return { witnessed: false, missing: [], changed: [], added: [] };
+  let prior;
+  try {
+    prior = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return { witnessed: false, missing: [], changed: [], added: [], error: "manifest unreadable" };
+  }
+  const now = new Map(rules.map((r) => [r.id, sha(`${r.id}|${r.check}|${r.evidence}`)]));
+  const before = new Map((prior.rules ?? []).map((r) => [r.id, r.hash]));
+  const missing = [...before.keys()].filter((id) => !now.has(id));
+  const changed = [...before.keys()].filter((id) => now.has(id) && now.get(id) !== before.get(id));
+  const added = [...now.keys()].filter((id) => !before.has(id));
+  return { witnessed: true, missing, changed, added, priorCount: before.size };
 }
 
 // --------------------------------------------------------------- checks ----
@@ -223,6 +263,11 @@ export function cycle(opts = {}) {
   // system cheerfully reported ALIGNED while evaluating nothing.
   const rulesMissing = rules.length === 0;
 
+  // Partial loss is the same failure wearing a disguise. A rule that has vanished since the
+  // last witnessed run means the parser ate it, not that the agent retired it deliberately.
+  const ruleDiff = diffAgainstWitness(rules);
+  const rulesLost = ruleDiff.witnessed && ruleDiff.missing.length > 0;
+
   const record = {
     at: new Date().toISOString(),
     scope,
@@ -232,10 +277,13 @@ export function cycle(opts = {}) {
     measured: machine.totals,
     verdicts: verdicts.map((v) => ({ id: v.id, check: v.check, status: v.status, severity: v.severity, detail: v.detail })),
     uncoveredFindings: uncovered.map((f) => ({ id: f.id, claim: f.claim })),
-    verdict: rulesMissing ? "BROKEN" : violated.length ? "VIOLATED" : broken.length ? "DEGRADED" : "ALIGNED",
+    ruleDiff,
+    verdict: rulesMissing || rulesLost ? "BROKEN"
+           : violated.length ? "VIOLATED"
+           : broken.length ? "DEGRADED" : "ALIGNED",
   };
 
-  return { machine, scoped, scope, verdicts, violated, broken, uncovered, rulesMissing, record };
+  return { machine, scoped, scope, verdicts, violated, broken, uncovered, rulesMissing, rulesLost, ruleDiff, record };
 }
 
 export function render(c) {
@@ -246,7 +294,7 @@ export function render(c) {
   L.push(`scope         ${c.scope} — ${s ? `${s.kind} ${s.sessionId.slice(0, 26)}` : "no session"}`);
   L.push(`measured      ${s ? `${s.cost.callCount} calls | ${s.cost.totalIn.toLocaleString()} in / ${s.cost.totalOut.toLocaleString()} out (${s.cost.ratio}:1)` : "nothing to measure"}`);
   L.push(`lifetime      ${c.machine.totals.calls} calls | ${c.machine.totals.input.toLocaleString()} in / ${c.machine.totals.output.toLocaleString()} out (${c.machine.totals.ratio}:1)`);
-  L.push(`RULES         ${c.rulesMissing ? "NONE PARSED — rules.md unreadable" : `${c.verdicts.length} defined | ${c.verdicts.filter(v=>v.status==="holding").length} holding | ${c.violated.length} violated | ${c.broken.length} unevaluable`}`);
+  L.push(`RULES         ${c.rulesMissing ? "NONE PARSED — rules.md unreadable" : c.rulesLost ? `RULE LOSS — ${c.ruleDiff.missing.join(", ")} vanished since last run` : `${c.verdicts.length} defined | ${c.verdicts.filter(v=>v.status==="holding").length} holding | ${c.violated.length} violated | ${c.broken.length} unevaluable`}`);
   L.push("");
   for (const v of c.verdicts) {
     const tag = v.status === "holding" ? "OK    " : v.status === "standing" ? "STATED" : v.status === "retired" ? "RETIRE" : v.status === "caveat" ? "CAVEAT" : v.status === "violated" ? "BREACH" : "BROKEN";
@@ -262,6 +310,10 @@ export function render(c) {
   L.push(`VERDICT: ${c.record.verdict}`);
   if (c.rulesMissing) {
     L.push("  rules.md parsed to zero rules. This is a FAILURE, not a pass. Check heading levels ('### R-00N').");
+  } else if (c.rulesLost) {
+    L.push(`  RULE(S) DISAPPEARED since the last witnessed run: ${c.ruleDiff.missing.join(", ")}.`);
+    L.push("  The parser drops any heading that is not '### R-NNN'. Restore the heading, or");
+    L.push("  record the retirement deliberately by adding a **retired:** line to the rule.");
   } else if (c.violated.length) {
     L.push("  The agent is not currently living up to its own learned rules.");
   } else {

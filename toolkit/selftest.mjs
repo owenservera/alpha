@@ -6,10 +6,10 @@
 
 import { readCalls, summarise, observe, toolWeight, ROLLOUT_DIR, approxTokens } from "./trace.mjs";
 import { analyse, analyseSession } from "./analyze.mjs";
-import { loadRules, CHECKS, cycle } from "./learn.mjs";
+import { loadRules, CHECKS, cycle, witnessRules, diffAgainstWitness } from "./learn.mjs";
 import { resumePlan, classifyError, sessionOutcome } from "./resume.mjs";
 import { attributeAll, attributeTurns, cacheCollapses } from "./attribution.mjs";
-import { existsSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, writeFileSync, unlinkSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -385,6 +385,34 @@ export function selfTest() {
     }
     assert(cc.collapseShare >= 0 && cc.collapseShare <= 100, `${cc.collapseShare}% out of range`);
     return `${cc.collapseRate}% of calls hold ${cc.collapseShare}% of fresh compute`;
+  });
+
+  // The defect an adversarial review proved: demote ONE heading and the parser silently drops
+  // ONE rule, with the system still reporting ALIGNED. Total-zero guards cannot see it.
+  check("REGRESSION: a single dropped heading is detected, not silently tolerated", () => {
+    const real = readFileSync(join(ROOT, "rules.md"), "utf8");
+    const rulesTmp = join(ROOT, "memory", ".selftest-rules.md");
+    const manTmp = join(ROOT, "memory", ".selftest-manifest.json");
+    try {
+      writeFileSync(rulesTmp, real, "utf8");
+      witnessRules(loadRules(rulesTmp), manTmp);
+      const baseline = loadRules(rulesTmp);
+      assert(baseline.length > 3, "need several rules to make this test meaningful");
+
+      // Demote exactly one heading. This is the mutation that used to vanish.
+      const victim = baseline[baseline.length - 1].id;
+      const damaged = real.replace(new RegExp(`^### ${victim} `, "m"), `## ${victim} `);
+      writeFileSync(rulesTmp, damaged, "utf8");
+
+      const after = loadRules(rulesTmp);
+      const diff = diffAgainstWitness(after, manTmp);
+      assert(after.length === baseline.length - 1, `expected one rule fewer, got ${after.length} vs ${baseline.length}`);
+      assert(diff.missing.includes(victim), `dropped rule ${victim} not reported as missing`);
+      assert(diff.witnessed === true, "manifest diff did not run");
+      return `${victim} dropped -> detected via manifest`;
+    } finally {
+      try { unlinkSync(rulesTmp); unlinkSync(manTmp); } catch { /* best-effort cleanup */ }
+    }
   });
 
   check("learning cycle is reproducible in shape", () => {
