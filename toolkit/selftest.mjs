@@ -467,6 +467,25 @@ export function selfTest() {
     return "liveness overrides turn shape";
   });
 
+  // A sub-agent preempted on its first call has no work in flight. Reporting it as
+  // interrupted makes the watchdog chase a phantom every tick.
+  check("INVARIANT: a session that produced nothing is never offered for resume", () => {
+    const corpse = { sessionId: "corpse1", kind: "subagent", callCount: 1, retries: 0,
+      calls: [{ startedAt: "2026-01-01T00:00:00Z", finishReason: null,
+                error: { name: "Error", message: "v4 sendQueuedNow preempts active turn" },
+                toolCalls: [], outputTokens: 0, inputTokens: 0 }] };
+    const o = sessionOutcome(corpse, { mtime: Date.now() - 3600_000 });
+    assert(o.state === "never-started", `empty session classified ${o.state}`);
+    assert(!plan.resume.some((r) => r.sessionId === "corpse1"), "an empty session was offered for resume");
+
+    // A session that DID emit a tool call is real work, even with no output tokens.
+    const real = { ...corpse, calls: [{ startedAt: "2026-01-01T00:00:00Z", finishReason: null,
+      error: null, toolCalls: ["Read"], outputTokens: 0, inputTokens: 5000 }] };
+    assert(sessionOutcome(real, { mtime: Date.now() - 3600_000 }).state === "interrupted",
+      "a session with in-flight tool work was misclassified");
+    return "empty shells separated from real interrupted work";
+  });
+
   check("a live session is never offered for resume", () => {
     const live = plan.outcomes.filter((o) => o.state === "active");
     for (const l of live) {

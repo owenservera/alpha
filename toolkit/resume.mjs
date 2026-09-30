@@ -88,8 +88,22 @@ export function sessionOutcome(session, opts = {}) {
   const ageMs = mtime ? now - mtime : null;
   const alive = ageMs !== null && ageMs < ALIVE_WINDOW_MS;
 
+  // Nothing to resume if nothing was ever done. Observed 2026-09-30: a sub-agent was
+  // dispatched and preempted on its very first call - 0 tool calls, 0 input tokens, 0 output.
+  // That is not interrupted work, it is an empty shell, and offering it for resume is a
+  // phantom for the watchdog to chase. This kind of noise erodes trust in the signal.
+  // Guarded: a session that legitimately finished, or was deliberately stopped, is NOT an
+  // empty shell even if it emitted nothing. Only sessions with no completion evidence qualify.
+  const noCompletionEvidence = err.kind !== "user-stop" && lastFinish !== "stop";
+  const producedNothing = noCompletionEvidence
+    && calls.every((c) => (c.outputTokens ?? 0) === 0)
+    && calls.every((c) => (c.toolCalls ?? []).length === 0);
+
   let state, reason;
-  if (alive) {
+  if (producedNothing && !alive) {
+    state = "never-started";
+    reason = `${calls.length} call(s), zero tool calls and zero output tokens - nothing to resume`;
+  } else if (alive) {
     state = "active";
     reason = `rollout file written ${Math.round(ageMs / 1000)}s ago — this session is running right now`;
   } else if (err.kind === "user-stop") {
@@ -107,12 +121,15 @@ export function sessionOutcome(session, opts = {}) {
   } else if (err.kind === "cancel") {
     state = "interrupted";
     reason = "final call was cancelled — retryable";
-  } else if (lastFinish === "tool-calls" || (lastFinish && lastFinish !== "stop")) {
+  } else if (lastFinish === "tool-calls" || (lastFinish && lastFinish !== "stop")
+             || (last.toolCalls ?? []).length > 0) {
+    // An outstanding tool call with no natural stop is unfinished work, whether or not
+    // the provider bothered to report a finishReason. Some records carry none.
     // Mid-work with no error: the turn ended with work outstanding and never came back.
     // Any finishReason other than a natural `stop` is treated as unfinished — completion
     // must be proven, never assumed.
     state = "interrupted";
-    reason = `ended mid-work (finish=${lastFinish}) with no natural stop`;
+    reason = `ended mid-work (finish=${lastFinish ?? "unreported"}) with no natural stop`;
   } else {
     state = "unknown";
     reason = `could not classify (finish=${lastFinish ?? "none"}, error=${err.kind})`;
@@ -174,6 +191,7 @@ export function resumePlan(calls = readCalls(), opts = {}) {
       interrupted: outcomes.filter((o) => o.state === "interrupted").length,
       haltedByUser: outcomes.filter((o) => o.state === "halted-by-user").length,
       unknown: outcomes.filter((o) => o.state === "unknown").length,
+      neverStarted: outcomes.filter((o) => o.state === "never-started").length,
       transportFailures: outcomes.reduce((a, o) => a + o.transportFailures, 0),
     },
     outcomes,
@@ -188,11 +206,11 @@ export function render(plan) {
   const s = plan.summary;
   L.push("ALPHA — INTERRUPTION / RESUME REPORT");
   L.push("=".repeat(72));
-  L.push(`sessions ${s.sessions}  completed ${s.completed}  interrupted ${s.interrupted}  halted-by-user ${s.haltedByUser}  unknown ${s.unknown}`);
+  L.push(`sessions ${s.sessions}  completed ${s.completed}  interrupted ${s.interrupted}  never-started ${s.neverStarted}  halted-by-user ${s.haltedByUser}  unknown ${s.unknown}`);
   L.push(`transport failures observed: ${s.transportFailures}`);
   L.push("");
   for (const o of plan.outcomes) {
-    const tag = o.state === "active" ? "ALIVE   " : o.state === "completed" ? "DONE    " : o.state === "interrupted" ? "RESUME  " : o.state === "halted-by-user" ? "BY-YOU  " : "UNKNOWN ";
+    const tag = o.state === "active" ? "ALIVE   " : o.state === "completed" ? "DONE    " : o.state === "interrupted" ? "RESUME  " : o.state === "halted-by-user" ? "BY-YOU  " : o.state === "never-started" ? "EMPTY   " : "UNKNOWN ";
     L.push(`  [${tag}] ${o.kind.padEnd(9)} ${o.sessionId.slice(0, 34)}`);
     L.push(`            ${o.reason}`);
     if (o.inFlight.length) L.push(`            in flight: ${o.inFlight.join(", ")}`);

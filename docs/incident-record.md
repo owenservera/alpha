@@ -103,6 +103,31 @@ is to notice when work has actually stopped.
 
 ---
 
+## I-7 · The watchdog chased a session that had never started
+
+**Observed.** A tick found one "interrupted" session — sub-agent `sess_subagent_agent_69befc41` —
+and offered it for resume.
+
+**Root cause, on inspection.** That sub-agent made **exactly one call**, was preempted on it
+(`v4 sendQueuedNow preempts active turn`), and produced zero input tokens, zero output tokens
+and zero tool calls. It was an empty shell, not interrupted work. Separately, a final call can
+carry no `finishReason` at all, and the interrupted-branch required a truthy one — so a record
+with an outstanding tool call and no reported finish reason fell through to `unknown`.
+
+**Fix.** Two changes:
+- `never-started` classification: zero tool calls and zero output tokens with no completion
+  evidence means there is nothing to resume. Guarded so it cannot override a genuine `stop` or a
+  deliberate user halt — the first version of this fix broke exactly those cases, which the
+  self-tests caught immediately.
+- A final call with an outstanding tool call is unfinished work regardless of whether the
+  provider reported a `finishReason`.
+
+**Why it matters.** The watchdog's entire value is knowing when work has actually stopped.
+Offering it a session that never started is a phantom it would chase on every tick — and noise
+on the one signal that is supposed to be trustworthy.
+
+---
+
 ## Failure taxonomy
 
 | class | signatures seen | retryable | may stop the system? |
