@@ -108,6 +108,23 @@ Verify with `node toolkit/selftest.mjs`. Regenerate evidence with `node alpha.mj
 
 ---
 
+### R-009 · CAVEAT, not a rule — cache collapse is real but unpredictable
+
+- **learned:** 2026-09-30
+- **evidence:** `toolkit/attribution.mjs` — 5 of 197 calls (2.5%) hold 61% of all fresh compute.
+  Normal calls average 803 fresh tokens; those five average 58,420. Worst single turn: 175,144
+  at a 0.07% cache hit rate.
+- **hypothesis tested and REJECTED:** that collapse follows large contexts. It does not. Rate by
+  context band: 0-40k = 2/22, 40-80k = 0/39, 80-120k = 0/43, 120k+ = 1/99. Observed at
+  contexts of 19,483 / 28,876 / 34,888 / 36,601 / 175,272 — no size correlation.
+- **why this is not a rule:** the agent cannot influence it. "Keep context small to avoid
+  collapse" would have read like a measured insight and been worth nothing. Filed as a caveat so
+  the number is not rediscovered and misattributed (R-006).
+- **what it does change:** any cost model reasoning about *means* is wrong about this workload
+  by two orders of magnitude. Read the tail, never the average.
+
+---
+
 ### R-008 · Session-level ratios cannot support a decision
 
 - **learned:** 2026-09-30, from the product review

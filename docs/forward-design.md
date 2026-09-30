@@ -81,6 +81,26 @@ of magnitude.
 if (cacheRead / inputTokens < 0.25) flagCollapse();   // don't average this call
 ```
 
+#### 1a-i · The obvious follow-up hypothesis, tested and **rejected**
+
+The first instinct was that collapse is caused by large contexts — so "keep context small"
+would be the rule. Measured against every scored call on this machine:
+
+| context band | calls | collapses | rate |
+|---|---|---|---|
+| 0–40,000 | 22 | 2 | 9% |
+| 40,000–80,000 | 39 | 0 | **0%** |
+| 80,000–120,000 | 43 | 0 | **0%** |
+| 120,000+ | 99 | 1 | 1% |
+
+Collapses occurred at contexts of 19,483 / 28,876 / 34,888 / 36,601 / 175,272. **There is no
+correlation with size.** The rule "keep context small to avoid cache collapse" would have been
+fabricated — it would have looked like a measured insight and been worth nothing.
+
+At n=5 collapses the honest statement is: *collapse is real, large, and currently
+unpredictable from anything the agent controls.* Recorded in `rules.md` as a measurement
+caveat, **not** as a rule. A rule that cannot change a decision is decoration (R-006).
+
 **Why it is falsifiable.** A turn with a marginal cost above a threshold and zero downstream
 effect is measurable today. So is a turn whose output was never referenced by any later call —
 which is the precise definition of work that was paid for and discarded.

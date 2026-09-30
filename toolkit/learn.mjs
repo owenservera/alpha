@@ -38,9 +38,13 @@ export function loadRules(path = RULES) {
     // A retired rule is kept in the file as a record of why it was removed. It must never
     // contribute to the verdict, or the verdict stays pinned red and means nothing.
     const retired = (b.match(/\*\*retired:\*\*\s*([\d-]+)/) || [])[1] ?? null;
+    // A caveat is a measured fact the agent CANNOT act on. Distinct from a rule (which must
+    // change behaviour) and from a retired rule (which was once one). Filed so the number is
+    // not rediscovered and misattributed; deliberately carries no `means`.
+    const caveat = (b.match(/\*\*caveat|\*\*why this is not a rule/m) || [])[0] ?? null;
     const evidence = (b.match(/\*\*evidence:\*\*\s*([\s\S]*?)\n-/) || [])[1]?.trim() ?? "";
     const means = (b.match(/\*\*means:\*\*\s*([\s\S]*?)(?:\n\n|$)/) || [])[1]?.trim() ?? "";
-    rules.push({ id, title, check, learned, retired, evidence, means });
+    rules.push({ id, title, check, learned, retired, caveat, evidence, means });
   }
   return rules;
 }
@@ -181,6 +185,9 @@ export function cycle(opts = {}) {
     if (r.retired) {
       return { ...r, status: "retired", fired: false, detail: `retired ${r.retired}; excluded from the verdict` };
     }
+    if (r.caveat) {
+      return { ...r, status: "caveat", fired: false, detail: "measured, but the agent cannot act on it; excluded from the verdict" };
+    }
     if (r.check === "none") {
       return { ...r, status: "standing", fired: false, detail: "discipline, not a threshold" };
     }
@@ -242,7 +249,7 @@ export function render(c) {
   L.push(`RULES         ${c.rulesMissing ? "NONE PARSED — rules.md unreadable" : `${c.verdicts.length} defined | ${c.verdicts.filter(v=>v.status==="holding").length} holding | ${c.violated.length} violated | ${c.broken.length} unevaluable`}`);
   L.push("");
   for (const v of c.verdicts) {
-    const tag = v.status === "holding" ? "OK    " : v.status === "standing" ? "STATED" : v.status === "retired" ? "RETIRE" : v.status === "violated" ? "BREACH" : "BROKEN";
+    const tag = v.status === "holding" ? "OK    " : v.status === "standing" ? "STATED" : v.status === "retired" ? "RETIRE" : v.status === "caveat" ? "CAVEAT" : v.status === "violated" ? "BREACH" : "BROKEN";
     L.push(`  [${tag}] ${v.id} ${v.title}`);
     L.push(`          ${v.detail}`);
   }

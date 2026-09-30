@@ -176,9 +176,9 @@ export function selfTest() {
     for (const r of rules) {
       assert(r.evidence.length > 10, `${r.id} has no evidence`);
       // retired rules carry "why retired" instead of "means" — that is the point of them
-      if (!r.retired) assert(r.means.length > 10, `${r.id} has no means`);
+      if (!r.retired && !r.caveat) assert(r.means.length > 10, `${r.id} has no means`);
     }
-    return `${rules.filter((r) => !r.retired).length} live, ${rules.filter((r) => r.retired).length} retired`;
+    return `${rules.filter((r) => !r.retired && !r.caveat).length} live, ${rules.filter((r) => r.retired).length} retired, ${rules.filter((r) => r.caveat).length} caveat`;
   });
 
   check("every named check resolves to a real function", () => {
@@ -216,7 +216,7 @@ export function selfTest() {
   check("every rule received a status", () => {
     assert(c.verdicts.length === rules.length, `${c.verdicts.length} verdicts for ${rules.length} rules`);
     for (const v of c.verdicts) {
-      assert(["holding", "violated", "standing", "broken", "retired"].includes(v.status), `${v.id}: bad status ${v.status}`);
+      assert(["holding", "violated", "standing", "broken", "retired", "caveat"].includes(v.status), `${v.id}: bad status ${v.status}`);
     }
   });
 
