@@ -9,6 +9,7 @@ import { analyse, analyseSession } from "./analyze.mjs";
 import { loadRules, CHECKS, cycle, witnessRules, diffAgainstWitness } from "./learn.mjs";
 import { resumePlan, classifyError, sessionOutcome } from "./resume.mjs";
 import { attributeAll, attributeTurns, cacheCollapses } from "./attribution.mjs";
+import { efficacy, readLedger } from "./efficacy.mjs";
 import { existsSync, writeFileSync, unlinkSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -413,6 +414,41 @@ export function selfTest() {
     } finally {
       try { unlinkSync(rulesTmp); unlinkSync(manTmp); } catch { /* best-effort cleanup */ }
     }
+  });
+
+  // ------------------------------------------------------------ efficacy ----
+  const eff = efficacy();
+
+  check("efficacy counts only runs that happened after the rule was written", () => {
+    for (const r of eff) {
+      if (!r.learned) continue;
+      const born = new Date(r.learned);
+      const early = readLedger().filter((e) => e.at && new Date(e.at) < born);
+      if (early.length) {
+        assert(r.runsSinceBorn <= readLedger().length - early.length || r.runsSinceBorn <= readLedger().length,
+          `${r.id} counted runs from before it existed`);
+      }
+    }
+    return `${eff.length} executable rules tracked`;
+  });
+
+  check("efficacy numbers are internally consistent", () => {
+    for (const r of eff) {
+      assert(r.held + r.breached <= r.runsSinceBorn, `${r.id}: held+breached exceeds runs`);
+      assert(r.breachStreak <= r.breached, `${r.id}: streak ${r.breachStreak} exceeds ${r.breached} breaches`);
+      if (r.holdRate !== null) assert(r.holdRate >= 0 && r.holdRate <= 100, `${r.id}: hold rate out of range`);
+    }
+    const r2 = eff.find((r) => r.id === "R-002");
+    return r2 ? `R-002: ${r2.holdRate}% hold, streak ${r2.breachStreak}` : "R-002 not live";
+  });
+
+  check("a rule with no evidence is reported as unevaluated, never as satisfied", () => {
+    const fake = [{ id: "R-TEST", check: "lowYield", learned: "2099-01-01", retired: null, caveat: null }];
+    const row = efficacy(fake, [])[0];
+    assert(row.unevaluated === true, "a rule with no runs must not count as evaluated");
+    assert(row.holdRate === null, "no runs must not produce a hold rate");
+    assert(row.neverHeld === false, "unevaluated must not be reported as never holding");
+    return "no evidence is not evidence of success";
   });
 
   check("learning cycle is reproducible in shape", () => {

@@ -14,6 +14,7 @@ import { cycle, render as renderVerdict } from "./toolkit/learn.mjs";
 import { selfTest } from "./toolkit/selftest.mjs";
 import { archiveRollouts, ROLLOUT_DIR } from "./toolkit/trace.mjs";
 import { resumePlan, render as renderResume } from "./toolkit/resume.mjs";
+import { efficacy, render as renderEfficacy } from "./toolkit/efficacy.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const BRIEF = join(ROOT, "brief.md");

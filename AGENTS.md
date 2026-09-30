@@ -65,6 +65,7 @@ re-enters the work; the resume report tells it what to re-enter.
 node alpha.mjs --resume   # what died, what was in flight — run this FIRST
 node alpha.mjs           # measure, verdict, attribution, regenerate brief.md
 node toolkit/attribution.mjs  # per-turn cost; where compute actually goes
+node toolkit/efficacy.mjs     # did the rules change anything?
 node toolkit/selftest.mjs   # 40 assertions against the live trace
 ```
 
