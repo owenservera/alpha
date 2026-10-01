@@ -124,8 +124,11 @@ export function selfTest() {
   const a = analyse();
 
   check("analyse totals match the trace totals", () => {
-    assert(a.totals.calls === calls.length, `calls ${a.totals.calls} != ${calls.length}`);
-    assert(a.totals.input === calls.reduce((x, c) => x + (c.inputTokens ?? 0), 0), "input total drifted");
+    // Compare against a machine built from the SAME read. The rollout file is appended to
+    // live, so re-reading it produces a different count and the assertion would race.
+    const one = analyse(observe(ROLLOUT_DIR, calls));
+    assert(one.totals.calls === calls.length, `calls ${one.totals.calls} != ${calls.length}`);
+    assert(one.totals.input === calls.reduce((x, c) => x + (c.inputTokens ?? 0), 0), "input total drifted");
   });
 
   check("ratio is computed as input/output", () => {
@@ -302,6 +305,10 @@ export function selfTest() {
       [{ name: "Error", message: "Provider returned a server error. Upstream error: getaddrinfo ENOTFOUND opencode.ai" }, "transport"],
       [{ name: "Error", message: "request failed, status 503" }, "transport"],
       [{ name: "Error", message: "fetch failed" }, "transport"],
+      // observed live 2026-10-01 in a harness-internal (sessionId: null) record
+      [{ name: "ProviderBusinessError", message: "user concurrency limit exceeded" }, "transport"],
+      [{ name: "Error", message: "429 Too Many Requests" }, "transport"],
+      [{ name: "Error", message: "server overloaded" }, "transport"],
     ];
     for (const [err, want] of cases) {
       const got = classifyError(err);
@@ -354,10 +361,14 @@ export function selfTest() {
   const attr = attributeAll();
 
   check("attributed fresh input reconciles with the trace total", () => {
+    // Harness-internal calls (web_fetch_processing, sessionId null) are real billed work and
+    // belong to no agent session. They are counted separately, so agent turns + internal must
+    // equal the trace total exactly — otherwise the difference is unexplained drift.
     const fromTrace = calls.filter((c) => c.billedInput != null).reduce((a, c) => a + c.billedInput, 0);
-    assert(attr.totals.freshInput === fromTrace,
-      `attribution sums to ${attr.totals.freshInput} but the trace says ${fromTrace}`);
-    return `${fromTrace.toLocaleString()} fresh tokens reconcile across ${attr.totals.turns} turns`;
+    const sum = attr.totals.freshInput + attr.harnessInternal.freshInput;
+    assert(sum === fromTrace,
+      `agent ${attr.totals.freshInput} + internal ${attr.harnessInternal.freshInput} = ${sum}, trace says ${fromTrace}`);
+    return `${fromTrace.toLocaleString()} fresh tokens reconcile: ${attr.totals.freshInput.toLocaleString()} agent + ${attr.harnessInternal.freshInput.toLocaleString()} harness-internal`;
   });
 
   // The first draft of attribution used marginal deltas. They go NEGATIVE when the cache

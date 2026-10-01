@@ -20,6 +20,18 @@ import { readCalls, summarise } from "./trace.mjs";
 /** Pseudo-turns the harness runs for titles; they carry no usage and are not agent work. */
 const isAgentTurn = (c) => c.source === "main_turn" || c.source === "subagent";
 
+/**
+ * Harness-internal calls are real model calls that belong to no agent conversation.
+ * Observed on this machine: `web_fetch_processing` and `web_search_tool` sources, plus a
+ * `model-io-no-session.jsonl` file whose records carry `sessionId: null` and which ZCode
+ * deletes within minutes. They are billed work and they fail like any other provider call.
+ *
+ * Defined as the INVERSE of agent work rather than by a list of names: ZCode adds new
+ * internal sources over time, and hardcoding one meant this bucket silently read 0 and the
+ * totals stopped reconciling.
+ */
+const isHarnessInternal = (c) => !isAgentTurn(c);
+
 /** Group calls into turns and price each one. */
 export function attributeTurns(calls = readCalls(), sessionId = null) {
   const relevant = calls.filter((c) => isAgentTurn(c) && (!sessionId || c.sessionId === sessionId));
@@ -97,12 +109,19 @@ export function attributeTurns(calls = readCalls(), sessionId = null) {
 /** Every session, attributed, plus the cross-session view that session totals hide. */
 export function attributeAll(calls = readCalls()) {
   const sessions = summarise(calls);
+  const harnessInternal = calls.filter(isHarnessInternal);
   const perSession = sessions.map((s) => attributeTurns(calls, s.sessionId)).filter((r) => r.turns.length);
   const allTurns = perSession.flatMap((r) => r.turns);
   return {
     sessions: perSession,
     hottest: [...allTurns].sort((a, b) => b.freshInput - a.freshInput).slice(0, 12),
     silent: allTurns.filter((t) => t.silent).sort((a, b) => b.freshInput - a.freshInput),
+    harnessInternal: {
+      calls: harnessInternal.length,
+      freshInput: harnessInternal.reduce((a, c) => a + (c.billedInput ?? 0), 0),
+      output: harnessInternal.reduce((a, c) => a + (c.outputTokens ?? 0), 0),
+      sources: [...new Set(harnessInternal.map((c) => c.source))],
+    },
     totals: {
       turns: allTurns.length,
       freshInput: allTurns.reduce((a, t) => a + t.freshInput, 0),
@@ -164,6 +183,7 @@ export function render(a) {
   L.push("=".repeat(72));
   L.push(`${t.turns} turns | ${t.freshInput.toLocaleString()} fresh input | ${t.output.toLocaleString()} output`);
   L.push(`silent turns (spent fresh tokens, emitted nothing): ${t.silentTurns} costing ${t.silentFreshInput.toLocaleString()}`);
+  L.push(`harness-internal (no agent session): ${a.harnessInternal.calls} calls, ${a.harnessInternal.freshInput.toLocaleString()} fresh [${a.harnessInternal.sources.join(",")}]`);
   L.push("");
   L.push("CACHE COLLAPSE — the distribution is violently lumpy");
   L.push(`  ${cc.collapseRate}% of calls (${cc.collapses.length}/${cc.calls}) hold ${cc.collapseShare}% of all fresh compute`);

@@ -33,7 +33,7 @@ export function classifyError(error) {
     // getaddrinfo ENOTFOUND opencode.ai", status 502, retryable=true. DNS and 5xx arrive
     // under several different error names depending on which layer fails first, so match the
     // message too — a transport failure misread as unknown is a dropped retry.
-    /server error|network|econn|eaddrnotavail|enotfound|getaddrinfo|socket|timeout|dns|fetch failed|eai_again|upstream error|\b50[0234]\b/.test(message)
+    /server error|network|econn|eaddrnotavail|enotfound|getaddrinfo|socket|timeout|dns|fetch failed|eai_again|upstream error|concurrency limit|rate limit|too many requests|overloaded|429|\b50[0234]\b/.test(message)
   ) {
     return { kind: "transport", retryable: true, deliberate: false, name, message: error.message };
   }

@@ -218,8 +218,10 @@ export function toolWeight(rolloutDir = ROLLOUT_DIR) {
 }
 
 /** Whole-machine view: one call to get everything the analysers need. */
-export function observe(rolloutDir = ROLLOUT_DIR) {
-  const calls = readCalls(rolloutDir);
+export function observe(rolloutDir = ROLLOUT_DIR, preRead = null) {
+  // preRead lets a caller pass an already-parsed set so totals cannot drift against the
+  // call list they are being compared with — the rollout file is appended to live.
+  const calls = preRead ?? readCalls(rolloutDir);
   const scored = calls.filter((c) => c.inputTokens != null);
   const totalIn = scored.reduce((a, c) => a + c.inputTokens, 0);
   const totalCacheRead = scored.reduce((a, c) => a + (c.cacheReadTokens ?? 0), 0);
